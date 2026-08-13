@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>航海争夺 - 热座双人游戏</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a2a3a; color: #fff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+    h1 { font-size: 2rem; margin: 5px 0; text-shadow: 0 0 8px rgba(255,215,0,0.6); }
+    .setup { background: #2c3e50; padding: 15px; border-radius: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+    .setup label { font-weight: bold; }
+    .setup button { padding: 8px 14px; border: none; border-radius: 6px; background: #f0ad4e; color: #222; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .setup button:hover { background: #ec971f; transform: scale(1.05); }
+    #mapPreview { background: #1a2a3a; padding: 10px; border-radius: 8px; min-width: 100px; min-height: 120px; display: flex; align-items: center; justify-content: center; }
+    .game-area { display: flex; flex-wrap: nowrap; gap: 10px; justify-content: center; width: 100%; max-width: 900px; }
+    .player { padding: 8px; border-radius: 10px; width: 48%; min-width: 300px; box-shadow: 0 6px 14px rgba(0,0,0,0.5); position: relative; transition: outline 0.2s; }
+    #player0 { background: #5a2a2a; }  /* 玩家1 暗红 */
+    #player1 { background: #2a3a5a; }  /* 玩家2 暗蓝 */
+    .player.active { outline: 3px solid #ffd700; outline-offset: 3px; }
+    .player-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+    .player-name { font-size: 1.1rem; font-weight: bold; }
+    .score { font-size: 1.4rem; font-weight: bold; color: #ffd700; }
+    .treasure { font-size: 1rem; color: #ffa500; }
+    .reward-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 2px; }
+    .reward-icon { text-align: center; font-size: 0.9rem; cursor: help; }
+    .map-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; background: #1a2a3a; padding: 6px; border-radius: 6px; margin: 2px 0; }
+    .cell { width: 100%; aspect-ratio: 1; background: #3a4a5a; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: all 0.15s; position: relative; border: 2px solid transparent; }
+    .cell.empty { background: #2a3a4a; cursor: default; }
+    .cell.placeable { cursor: pointer; border-color: #ffd700; background: #4a5a6a; }
+    .cell.placeable:hover { background: #5a6a7a; transform: scale(1.05); }
+    .cell.selectable { border-color: #ff6b6b; }
+    .cell.selectable:hover { background: #6a5a4a; }
+    .cell .emoji { font-size: 1.4rem; }
+    .prisoner-area { display: flex; gap: 6px; margin: 4px 0; background: #1a2a3a; padding: 4px; border-radius: 6px; }
+    .prisoner { width: 40px; height: 40px; background: #3a4a5a; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; cursor: pointer; border: 2px solid transparent; }
+    .prisoner.selectable { border-color: #ff6b6b; }
+    .prisoner.placeable { border-color: #ffd700; }
+    .prompt-area { background: #2c3e50; padding: 8px 16px; border-radius: 10px; font-size: 1rem; min-height: 48px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.4); margin: 5px 0; }
+    .prompt-area .buttons { margin-top: 6px; display: flex; gap: 8px; justify-content: center; }
+    .prompt-area button { padding: 6px 12px; border: none; border-radius: 6px; background: #f0ad4e; color: #222; font-weight: bold; cursor: pointer; }
+    .prompt-area button:hover { background: #ec971f; }
+    .hidden { display: none; }
+    .footer { margin-top: 5px; font-size: 0.75rem; color: #aaa; display: flex; gap: 10px; align-items: center; }
+    #newGameBtn { display: none; padding: 6px 12px; background: #f0ad4e; color: #222; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    #newGameBtn:hover { background: #ec971f; }
+  </style>
+</head>
+<body>
+  <h1>⚓ 航海争夺 ⚓</h1>
+  <div class="setup" id="setupPanel">
+    <label>选择地图：</label>
+    <button data-map="A">地图 A</button>
+    <button data-map="B">地图 B</button>
+    <button data-map="C">地图 C</button>
+    <button data-map="D">地图 D</button>
+    <button data-map="E">地图 E</button>
+    <button data-map="G">地图 G</button>
+    <button data-map="random">🎲 随机</button>
+    <div id="mapPreview">请选择地图</div>
+    <button id="startBtn" class="hidden">开始游戏</button>
+  </div>
+  <div class="prompt-area" id="promptArea">
+    请选择地图以开始
+  </div>
+  <div class="game-area" id="gameArea" style="display:none;">
+    <div class="player" id="player0">
+      <div class="player-header">
+        <span class="player-name">👤 玩家 1</span>
+        <span class="score" id="score0">0</span>
+        <span class="treasure" id="treasure0">📜</span>
+      </div>
+      <div class="reward-row" id="rewardRow0"></div>
+      <div class="map-grid" id="grid0"></div>
+      <div class="prisoner-area" id="prisoners0"></div>
+    </div>
+    <div class="player" id="player1">
+      <div class="player-header">
+        <span class="player-name">👤 玩家 2</span>
+        <span class="score" id="score1">0</span>
+        <span class="treasure" id="treasure1">📜</span>
+      </div>
+      <div class="reward-row" id="rewardRow1"></div>
+      <div class="map-grid" id="grid1"></div>
+      <div class="prisoner-area" id="prisoners1"></div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>先手：玩家1 | 热座双人 | 藏宝图每回合+1</span>
+    <button id="newGameBtn">开始新游戏</button>
+  </div>
+
+  <script>
+    (function() {
+      // ==================== 角色定义 ====================
+      const ROLES = {
+        chef: { name: '厨师', emoji: '👨‍🍳', short: '厨' },
+        parrot: { name: '鹦鹉', emoji: '🦜', short: '鹦' },
+        cartographer: { name: '制图师', emoji: '🗺️', short: '图' },
+        navigator: { name: '领航员', emoji: '🧭', short: '航' },
+        gunner: { name: '炮手', emoji: '💣', short: '炮' },
+        monkey: { name: '猴子', emoji: '🐒', short: '猴' },
+        lookout: { name: '瞭望员', emoji: '🚩', short: '瞭' },
+        carpenter: { name: '木匠', emoji: '🪚', short: '木' },
+        sailor: { name: '水手', emoji: '⚓', short: '水' }
+      };
+      const ROLE_KEYS = Object.keys(ROLES);
+
+      // ==================== 地图数据 ====================
+      const MAPS = {
+        A: {
+          name: 'A',
+          columns: [
+            { rows: [0,1], reward: null },
+            { rows: [0,1,2], reward: { type: 'treasure' } },
+            { rows: [0,1,2,3,4], reward: { type: 'score', amount: 5 } },
+            { rows: [2,3], reward: null },
+            { rows: [0,1,2], reward: { type: 'score', amount: 3 } },
+          ]
+        },
+        B: {
+          name: 'B',
+          columns: [
+            { rows: [0,1], reward: { type: 'first_complete', first: 1, second: 0 } },
+            { rows: [0,1,2], reward: { type: 'first_complete', first: 2, second: 1 } },
+            { rows: [0,1,2,3,4], reward: { type: 'first_complete', first: 6, second: 3 } },
+            { rows: [0], reward: { type: 'first_complete', first: 0, second: 2 } },
+            { rows: [0,1,2,3], reward: { type: 'first_complete', first: 4, second: 2 } },
+          ]
+        },
+        C: {
+          name: 'C',
+          columns: [
+            { rows: [0,1,2], reward: { type: 'treasure' } },
+            { rows: [0,1,2], reward: { type: 'end_if_same', score: 6 } },
+            { rows: [0,1], reward: null },
+            { rows: [0,1,2,3,4], reward: { type: 'end_if_all_distinct', score: 4 } },
+            { rows: [0,1], reward: null },
+          ]
+        },
+        D: {
+          name: 'D',
+          columns: [
+            { rows: [1,2,3], reward: { type: 'score', amount: 3 } },
+            { rows: [0,1,2,3], reward: { type: 'score_per_completed_cols', multiplier: 2 } },
+            { rows: [0,1,2,3,4], reward: { type: 'score_distinct_roles', multiplier: 1 } },
+            { rows: [2,3], reward: null },
+            { rows: [2], reward: { type: 'lose_score', amount: 1 }, requiresMinScore: 1 }, // 修复：将requiresMinScore移到顶层
+          ]
+        },
+        E: {
+          name: 'E',
+          columns: [
+            { rows: [0,1,2,3], reward: { type: 'score', amount: 4 } },
+            { rows: [0,1], reward: { type: 'if_same_then', action: 'treasure' } },
+            { rows: [0,1,2], reward: { type: 'if_all_distinct_then', action: 'flip_tile' } },
+            { rows: [0,1,2], reward: { type: 'if_same_then', action: 'extra_turn' } },
+            { rows: [1,2,3], reward: { type: 'score', amount: 3 } },
+          ]
+        },
+        G: {
+          name: 'G',
+          columns: [
+            { rows: [3,4], reward: { type: 'flip_prisoner' } },
+            { rows: [1,2,3], reward: { type: 'treasure' } },
+            { rows: [0,1,2,3], reward: { type: 'first_complete', first: 5, second: 2 } },
+            { rows: [0,1,2], reward: { type: 'release_prisoner' } },
+            { rows: [0,1,2], reward: { type: 'release_prisoner' } },
+          ]
+        }
+      };
+
+      // ==================== 全局状态 ====================
+      let mapKey = null;
+      let selectedMap = null;
+      let deck = [];
+      let currentPlayer = 0;
+      let players = [];
+      let treasureOwner = null;
+      let colFirstCompleted = Array(5).fill(null);
+      let gameOver = false;
+      let promptResolver = null;
+
+      // ==================== 方块与牌堆 ====================
+      function createDeck() {
+        const allPairs = [];
+        for (let i = 0; i < ROLE_KEYS.length; i++) {
+          for (let j = i + 1; j < ROLE_KEYS.length; j++) {
+            allPairs.push([ROLE_KEYS[i], ROLE_KEYS[j]]);
+          }
+        }
+        deck = [];
+        for (let pair of allPairs) {
+          for (let copy = 0; copy < 2; copy++) {
+            const upIndex = Math.random() < 0.5 ? 0 : 1;
+            deck.push({ faces: [pair[0], pair[1]], upIndex: upIndex });
+          }
+        }
+        for (let i = deck.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+      }
+
+      function drawTile() {
+        if (deck.length === 0) createDeck();
+        return deck.pop();
+      }
+
+      // ==================== 玩家对象 ====================
+      function createPlayer(index) {
+        return {
+          index,
+          score: 0,
+          grid: Array(5).fill(null).map(() => Array(5).fill(null)),
+          prisoners: [],
+          finishedCols: Array(5).fill(false),
+        };
+      }
+
+      // ==================== 工具函数 ====================
+      function getTileUpRole(tile) { return tile.faces[tile.upIndex]; }
+      function getTileEmoji(tile) { return ROLES[getTileUpRole(tile)].emoji; }
+      function getTileName(tile) { return ROLES[getTileUpRole(tile)].name; }
+
+      function isColumnFull(player, col) {
+        const rows = MAPS[mapKey].columns[col].rows;
+        for (let r of rows) if (!player.grid[r][col]) return false;
+        return true;
+      }
+
+      function getPlaceableColumns(player) {
+        const cols = MAPS[mapKey].columns;
+        const res = [];
+        for (let c = 0; c < cols.length; c++) {
+          if (isColumnFull(player, c)) continue;
+          // 读取顶层requiresMinScore（已修复）
+          if (cols[c].requiresMinScore && player.score < cols[c].requiresMinScore) continue;
+          res.push(c);
+        }
+        return res;
+      }
+
+      function getColumnBottomEmptyRow(player, col) {
+        const rows = MAPS[mapKey].columns[col].rows;
+        for (let r of rows) if (!player.grid[r][col]) return r;
+        return null;
+      }
+
+      function placeTileOnMap(player, col, tile) {
+        const row = getColumnBottomEmptyRow(player, col);
+        if (row === null) return false;
+        player.grid[row][col] = tile;
+        return { row, col };
+      }
+
+      function getNeighbors(player, row, col) {
+        const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+        const res = [];
+        for (let [dr,dc] of dirs) {
+          const nr = row+dr, nc = col+dc;
+          if (nr>=0 && nr<5 && nc>=0 && nc<5 && player.grid[nr][nc]) res.push({row:nr, col:nc});
+        }
+        return res;
+      }
+
+      // ==================== 柱奖励图标与描述 ====================
+      function getRewardIcon(reward) {
+        if (!reward) return '';
+        switch(reward.type) {
+          case 'treasure': return '📜';
+          case 'score': return '💰';
+          case 'first_complete': return '🏅';
+          case 'end_if_same': return '🟰';
+          case 'end_if_all_distinct': return '🔢';
+          case 'lose_score': return '💸';
+          case 'score_per_completed_cols': return '📊';
+          case 'score_distinct_roles': return '🔍';
+          case 'if_same_then': return '🔄';
+          case 'if_all_distinct_then': return '🎯';
+          case 'flip_prisoner': return '🔃';
+          case 'release_prisoner': return '🔑';
+          default: return '❓';
+        }
+      }
+
+      function getRewardDescription(reward) {
+        if (!reward) return '';
+        switch(reward.type) {
+          case 'treasure': return '获得藏宝图';
+          case 'score': return `立即得${reward.amount}分`;
+          case 'first_complete': return `先完成者+${reward.first}分，后完成者+${reward.second}分`;
+          case 'end_if_same': return `游戏结束时，若此列所有角色相同，得${reward.score}分`;
+          case 'end_if_all_distinct': return `游戏结束时，若此列所有角色互不相同，得${reward.score}分`;
+          case 'lose_score': return `立即失去${reward.amount}分（无分则不可选）`;
+          case 'score_per_completed_cols': return `立即得${reward.multiplier} × 已完成的列数`;
+          case 'score_distinct_roles': return `立即得${reward.multiplier} × 此列不同角色种类数`;
+          case 'if_same_then': return reward.action === 'treasure' ? '若此列角色相同，获得藏宝图' : '若此列角色相同，额外抽一板';
+          case 'if_all_distinct_then': return '若此列角色互不相同，选择一个板块翻面';
+          case 'flip_prisoner': return '将一个囚徒翻面（不触发效果）';
+          case 'release_prisoner': return '释放一个囚徒并放置（不翻面）';
+          default: return '';
+        }
+      }
+
+      // ==================== 异步交互 ====================
+      function showPrompt(text) {
+        const promptArea = document.getElementById('promptArea');
+        promptArea.innerHTML = text;
+      }
+
+      function waitForClick(selector) {
+        return new Promise((resolve) => {
+          promptResolver = resolve;
+          document.querySelectorAll(selector).forEach(el => el.classList.add('selectable'));
+          showPrompt('请选择一个高亮目标');
+        });
+      }
+
+      function clearHighlights() {
+        document.querySelectorAll('.selectable, .placeable').forEach(el => el.classList.remove('selectable', 'placeable'));
+      }
+
+      document.addEventListener('click', function(e) {
+        const target = e.target.closest('.cell, .prisoner, .setup button, #startBtn, #newGameBtn');
+        if (!target) return;
+        if (target.id === 'newGameBtn') {
+          resetGame();
+          return;
+        }
+        if (target.classList.contains('cell')) {
+          if (promptResolver && (target.classList.contains('selectable') || target.classList.contains('placeable'))) {
+            const col = parseInt(target.dataset.col);
+            const row = parseInt(target.dataset.row);
+            const playerIndex = parseInt(target.closest('.player').id.replace('player',''));
+            clearHighlights();
+            promptResolver({ type: 'cell', row, col, playerIndex });
+            promptResolver = null;
+          }
+        } else if (target.classList.contains('prisoner')) {
+          if (promptResolver && (target.classList.contains('selectable') || target.classList.contains('placeable'))) {
+            const prisonerIndex = parseInt(target.dataset.prisoner);
+            const playerIndex = parseInt(target.closest('.player').id.replace('player',''));
+            clearHighlights();
+            promptResolver({ type: 'prisoner', prisonerIndex, playerIndex });
+            promptResolver = null;
+          }
+        }
+      });
+
+      // ==================== UI 渲染 ====================
+      function renderAll() {
+        for (let pIdx = 0; pIdx < 2; pIdx++) {
+          const player = players[pIdx];
+          const gridEl = document.getElementById(`grid${pIdx}`);
+          gridEl.innerHTML = '';
+          for (let r = 4; r >= 0; r--) {
+            for (let c = 0; c < 5; c++) {
+              const cell = document.createElement('div');
+              cell.className = 'cell empty';
+              if (player.grid[r][c]) {
+                cell.classList.remove('empty');
+                cell.innerHTML = `<span class="emoji">${getTileEmoji(player.grid[r][c])}</span>`;
+              } else {
+                const rows = MAPS[mapKey].columns[c].rows;
+                if (!rows.includes(r)) cell.style.visibility = 'hidden';
+              }
+              cell.dataset.col = c;
+              cell.dataset.row = r;
+              gridEl.appendChild(cell);
+            }
+          }
+          const prisonEl = document.getElementById(`prisoners${pIdx}`);
+          prisonEl.innerHTML = '';
+          if (mapKey === 'G') {
+            player.prisoners.forEach((prisoner, idx) => {
+              if (prisoner) {
+                const p = document.createElement('div');
+                p.className = 'prisoner';
+                p.innerHTML = `<span class="emoji">${getTileEmoji(prisoner)}</span>`;
+                p.dataset.prisoner = idx;
+                prisonEl.appendChild(p);
+              }
+            });
+          }
+          document.getElementById(`score${pIdx}`).textContent = player.score;
+          document.getElementById(`treasure${pIdx}`).textContent = (treasureOwner === pIdx) ? '📜' : '';
+          const rewardRow = document.getElementById(`rewardRow${pIdx}`);
+          rewardRow.innerHTML = '';
+          for (let c = 0; c < 5; c++) {
+            const reward = MAPS[mapKey].columns[c].reward;
+            const icon = document.createElement('div');
+            icon.className = 'reward-icon';
+            icon.textContent = getRewardIcon(reward);
+            icon.title = getRewardDescription(reward);
+            rewardRow.appendChild(icon);
+          }
+        }
+        document.getElementById('player0').classList.toggle('active', currentPlayer === 0);
+        document.getElementById('player1').classList.toggle('active', currentPlayer === 1);
+      }
+
+      function highlightPlaceableColumns(playerIdx) {
+        const player = players[playerIdx];
+        const cols = getPlaceableColumns(player);
+        document.querySelectorAll(`#player${playerIdx} .cell`).forEach(cell => {
+          const col = parseInt(cell.dataset.col);
+          if (cols.includes(col) && !player.grid[cell.dataset.row][col]) {
+            cell.classList.add('placeable');
+          }
+        });
+      }
+
+      function highlightSelectableCells(playerIdx, cells) {
+        document.querySelectorAll(`#player${playerIdx} .cell`).forEach(cell => {
+          const row = parseInt(cell.dataset.row);
+          const col = parseInt(cell.dataset.col);
+          if (cells.some(c => c.row === row && c.col === col)) {
+            cell.classList.add('selectable');
+          }
+        });
+      }
+
+      function highlightSelectablePrisoners(playerIdx) {
+        document.querySelectorAll(`#player${playerIdx} .prisoner`).forEach(el => el.classList.add('selectable'));
+      }
+
+      // ==================== 游戏逻辑核心 ====================
+      async function doTurn(playerIdx) {
+        const player = players[playerIdx];
+        renderAll(); // 确保黄框正确显示当前玩家
+
+        const tile = drawTile();
+        const promptArea = document.getElementById('promptArea');
+        promptArea.innerHTML = '';
+        const tileDisplay = document.createElement('div');
+        tileDisplay.style.fontSize = '1.4rem';
+        tileDisplay.innerHTML = `玩家${playerIdx+1} 抽到方块：<span style="font-size:2rem;">${getTileEmoji(tile)}</span> ${getTileName(tile)}`;
+        promptArea.appendChild(tileDisplay);
+
+        const btnDiv = document.createElement('div');
+        btnDiv.className = 'buttons';
+        const keepBtn = document.createElement('button');
+        keepBtn.textContent = '保持正面放置';
+        const flipBtn = document.createElement('button');
+        flipBtn.textContent = '翻面查看';
+        const placeBtn = document.createElement('button');
+        placeBtn.textContent = '放置此方块';
+        placeBtn.style.display = 'none';
+        btnDiv.appendChild(keepBtn);
+        btnDiv.appendChild(flipBtn);
+        btnDiv.appendChild(placeBtn);
+        promptArea.appendChild(btnDiv);
+
+        const flipDecision = await new Promise(resolve => {
+          keepBtn.onclick = () => resolve('keep');
+          flipBtn.onclick = () => {
+            tile.upIndex = tile.upIndex === 0 ? 1 : 0;
+            tileDisplay.innerHTML = `玩家${playerIdx+1} 翻面后为：<span style="font-size:2rem;">${getTileEmoji(tile)}</span> ${getTileName(tile)}`;
+            keepBtn.style.display = 'none';
+            flipBtn.style.display = 'none';
+            placeBtn.style.display = 'inline-block';
+            resolve('flipped');
+          };
+        });
+
+        if (flipDecision === 'flipped') {
+          await new Promise(resolve => { placeBtn.onclick = () => resolve(); });
+        }
+
+        promptArea.innerHTML = `玩家${playerIdx+1} 放置 <span style="font-size:2rem;">${getTileEmoji(tile)}</span> ${getTileName(tile)}`;
+        renderAll();
+        highlightPlaceableColumns(playerIdx);
+        const placement = await waitForClick(`#player${playerIdx} .placeable`);
+        clearHighlights();
+        const col = placement.col;
+        const pos = placeTileOnMap(player, col, tile);
+        if (!pos) {
+          showPrompt('无空格可放，弃掉方块');
+          await new Promise(r => setTimeout(r, 600));
+          renderAll();
+          return;
+        }
+        renderAll();
+
+        await resolveRoleEffect(playerIdx, pos.row, pos.col, tile);
+
+        if (isColumnFull(player, col) && !player.finishedCols[col]) {
+          player.finishedCols[col] = true;
+          await resolveColumnReward(playerIdx, col);
+        }
+        renderAll();
+      }
+
+      async function resolveRoleEffect(playerIdx, row, col, tile) {
+        const player = players[playerIdx];
+        const role = getTileUpRole(tile);
+        switch(role) {
+          case 'chef': {
+            let count = 0;
+            for (let c = 0; c < 5; c++) if (player.grid[row][c]) count++;
+            addScore(playerIdx, count);
+            break;
+          }
+          case 'parrot': {
+            showPrompt(`🦜 玩家${playerIdx+1} 的鹦鹉触发额外抽板！`);
+            await new Promise(r => setTimeout(r, 500));
+            await doTurn(playerIdx);
+            break;
+          }
+          case 'cartographer': {
+            treasureOwner = playerIdx;
+            showPrompt(`🗺️ 玩家${playerIdx+1} 获得藏宝图！`);
+            await new Promise(r => setTimeout(r, 500));
+            break;
+          }
+          case 'navigator': {
+            let cartographers = 0;
+            for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+              const t = player.grid[r][c];
+              if (t && getTileUpRole(t) === 'cartographer') cartographers++;
+            }
+            addScore(playerIdx, 2 * cartographers);
+            break;
+          }
+          case 'gunner': {
+            addScore(playerIdx, 5);
+            break;
+          }
+          case 'monkey': {
+            addScore(playerIdx, 1);
+            const neighbors = getNeighbors(player, row, col);
+            if (neighbors.length > 0) {
+              showPrompt(`🐒 玩家${playerIdx+1} 的猴子翻面相邻板块，请选择`);
+              renderAll();
+              highlightSelectableCells(playerIdx, neighbors);
+              const choice = await waitForClick(`#player${playerIdx} .selectable`);
+              clearHighlights();
+              const tileToFlip = player.grid[choice.row][choice.col];
+              if (tileToFlip) {
+                tileToFlip.upIndex = tileToFlip.upIndex === 0 ? 1 : 0;
+                renderAll();
+                await resolveRoleEffect(playerIdx, choice.row, choice.col, tileToFlip);
+              }
+            }
+            break;
+          }
+          default: break;
+        }
+        renderAll();
+      }
+
+      async function resolveColumnReward(playerIdx, col) {
+        const player = players[playerIdx];
+        const map = MAPS[mapKey];
+        const colDef = map.columns[col];
+        const reward = colDef.reward;
+        if (!reward) return;
+        switch (reward.type) {
+          case 'treasure': {
+            treasureOwner = playerIdx;
+            showPrompt(`📜 玩家${playerIdx+1} 获得藏宝图！`);
+            await new Promise(r => setTimeout(r, 500));
+            break;
+          }
+          case 'score': {
+            addScore(playerIdx, reward.amount);
+            break;
+          }
+          case 'first_complete': {
+            if (colFirstCompleted[col] === null) {
+              colFirstCompleted[col] = playerIdx;
+              addScore(playerIdx, reward.first);
+              showPrompt(`🏅 玩家${playerIdx+1} 先完成者 +${reward.first}`);
+            } else {
+              addScore(playerIdx, reward.second);
+              showPrompt(`🥈 玩家${playerIdx+1} 后完成者 +${reward.second}`);
+            }
+            await new Promise(r => setTimeout(r, 500));
+            break;
+          }
+          case 'lose_score': {
+            if (player.score >= reward.amount) addScore(playerIdx, -reward.amount);
+            else player.score = 0;
+            break;
+          }
+          case 'score_per_completed_cols': {
+            const completed = player.finishedCols.filter(v => v).length;
+            addScore(playerIdx, reward.multiplier * completed);
+            break;
+          }
+          case 'score_distinct_roles': {
+            const rolesSet = new Set();
+            for (let r of colDef.rows) {
+              const t = player.grid[r][col];
+              if (t) rolesSet.add(getTileUpRole(t));
+            }
+            addScore(playerIdx, reward.multiplier * rolesSet.size);
+            break;
+          }
+          case 'if_same_then': {
+            const roles = colDef.rows.map(r => getTileUpRole(player.grid[r][col]));
+            const allSame = roles.every(r => r === roles[0]);
+            if (allSame) {
+              if (reward.action === 'treasure') {
+                treasureOwner = playerIdx;
+                showPrompt(`📜 玩家${playerIdx+1} 获得藏宝图！`);
+                await new Promise(r => setTimeout(r, 500));
+              } else if (reward.action === 'extra_turn') {
+                showPrompt(`🎉 玩家${playerIdx+1} 相同角色！额外抽板！`);
+                await new Promise(r => setTimeout(r, 500));
+                await doTurn(playerIdx);
+              }
+            }
+            break;
+          }
+          case 'if_all_distinct_then': {
+            const roles = colDef.rows.map(r => getTileUpRole(player.grid[r][col]));
+            const unique = new Set(roles);
+            if (unique.size === roles.length) {
+              if (reward.action === 'flip_tile') {
+                showPrompt(`🔄 玩家${playerIdx+1} 的角色互不相同！选择一个已填板块翻面`);
+                renderAll();
+                const cells = [];
+                for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) if (player.grid[r][c]) cells.push({row:r, col:c});
+                highlightSelectableCells(playerIdx, cells);
+                const choice = await waitForClick(`#player${playerIdx} .selectable`);
+                clearHighlights();
+                const tileToFlip = player.grid[choice.row][choice.col];
+                tileToFlip.upIndex = tileToFlip.upIndex === 0 ? 1 : 0;
+                renderAll();
+                await resolveRoleEffect(playerIdx, choice.row, choice.col, tileToFlip);
+              }
+            }
+            break;
+          }
+          case 'flip_prisoner': {
+            if (player.prisoners.length > 0) {
+              showPrompt(`🔑 玩家${playerIdx+1} 翻面一个囚徒`);
+              highlightSelectablePrisoners(playerIdx);
+              const choice = await waitForClick(`#player${playerIdx} .prisoner.selectable`);
+              clearHighlights();
+              const prisoner = player.prisoners[choice.prisonerIndex];
+              if (prisoner) prisoner.upIndex = prisoner.upIndex === 0 ? 1 : 0;
+            }
+            break;
+          }
+          case 'release_prisoner': {
+            if (player.prisoners.length > 0) {
+              showPrompt(`🔓 玩家${playerIdx+1} 选择一个囚徒释放`);
+              highlightSelectablePrisoners(playerIdx);
+              const choice = await waitForClick(`#player${playerIdx} .prisoner.selectable`);
+              clearHighlights();
+              const prisoner = player.prisoners.splice(choice.prisonerIndex, 1)[0];
+              if (prisoner) {
+                renderAll();
+                showPrompt(`玩家${playerIdx+1} 请选择放置列`);
+                highlightPlaceableColumns(playerIdx);
+                const placement = await waitForClick(`#player${playerIdx} .placeable`);
+                clearHighlights();
+                const pos = placeTileOnMap(player, placement.col, prisoner);
+                if (pos) {
+                  renderAll();
+                  await resolveRoleEffect(playerIdx, pos.row, pos.col, prisoner);
+                  if (isColumnFull(player, placement.col) && !player.finishedCols[placement.col]) {
+                    player.finishedCols[placement.col] = true;
+                    await resolveColumnReward(playerIdx, placement.col);
+                  }
+                }
+              }
+            }
+            break;
+          }
+        }
+        renderAll();
+      }
+
+      function addScore(playerIdx, amount) {
+        players[playerIdx].score = Math.max(0, players[playerIdx].score + amount);
+        renderAll();
+      }
+
+      // ==================== 游戏结束计分 ====================
+      function computeEndScores() {
+        for (let pIdx = 0; pIdx < 2; pIdx++) {
+          const player = players[pIdx];
+          const map = MAPS[mapKey];
+          for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+            const tile = player.grid[r][c];
+            if (tile && getTileUpRole(tile) === 'lookout') {
+              let hasAbove = false;
+              for (let rr = r+1; rr < 5; rr++) if (player.grid[rr][c]) { hasAbove = true; break; }
+              if (!hasAbove) addScore(pIdx, 4);
+            }
+          }
+          for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+            const tile = player.grid[r][c];
+            if (tile && getTileUpRole(tile) === 'carpenter') {
+              let hasGunnerRow = false, hasGunnerCol = false;
+              for (let cc = 0; cc < 5; cc++) {
+                const t = player.grid[r][cc];
+                if (t && getTileUpRole(t) === 'gunner') { hasGunnerRow = true; break; }
+              }
+              for (let rr = 0; rr < 5; rr++) {
+                const t = player.grid[rr][c];
+                if (t && getTileUpRole(t) === 'gunner') { hasGunnerCol = true; break; }
+              }
+              if (!hasGunnerRow && !hasGunnerCol) addScore(pIdx, 3);
+            }
+          }
+          let parrotCount = 0;
+          for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+            const t = player.grid[r][c];
+            if (t && getTileUpRole(t) === 'parrot') parrotCount++;
+          }
+          addScore(pIdx, -parrotCount);
+          let sailorCols = 0;
+          for (let c = 0; c < 5; c++) {
+            let hasSailor = false;
+            for (let r = 0; r < 5; r++) {
+              const t = player.grid[r][c];
+              if (t && getTileUpRole(t) === 'sailor') { hasSailor = true; break; }
+            }
+            if (hasSailor) sailorCols++;
+          }
+          addScore(pIdx, sailorCols * sailorCols);
+          if (mapKey === 'C') {
+            const col2 = map.columns[1];
+            const roles2 = col2.rows.map(r => getTileUpRole(player.grid[r][1]));
+            if (roles2.every(r => r === roles2[0])) addScore(pIdx, col2.reward.score);
+            const col4 = map.columns[3];
+            const roles4 = col4.rows.map(r => getTileUpRole(player.grid[r][3]));
+            const unique4 = new Set(roles4);
+            if (unique4.size === roles4.length) addScore(pIdx, col4.reward.score);
+          }
+          let gunnerCount = 0;
+          for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+            const t = player.grid[r][c];
+            if (t && getTileUpRole(t) === 'gunner') gunnerCount++;
+          }
+          player.gunnerCount = gunnerCount;
+        }
+        const p0Boom = players[0].gunnerCount >= 3;
+        const p1Boom = players[1].gunnerCount >= 3;
+        if (p0Boom && p1Boom) return 'draw';
+        if (p0Boom) return 1;
+        if (p1Boom) return 0;
+        const s0 = players[0].score, s1 = players[1].score;
+        if (s0 > s1) return 0;
+        if (s1 > s0) return 1;
+        if (treasureOwner === 0) return 0;
+        if (treasureOwner === 1) return 1;
+        return 'draw';
+      }
+
+      // ==================== 游戏流程控制 ====================
+      async function runGame() {
+        currentPlayer = 0;
+        renderAll();
+        while (!gameOver) {
+          const playerIdx = currentPlayer;
+          showPrompt(`玩家${playerIdx+1} 的回合`);
+          await new Promise(r => setTimeout(r, 300));
+          await doTurn(playerIdx);
+          if (treasureOwner !== null) addScore(treasureOwner, 1);
+          renderAll();
+          const filledCount = players[playerIdx].finishedCols.filter(v => v).length;
+          if (filledCount >= 4) {
+            if (playerIdx === 1) {
+              gameOver = true;
+            } else {
+              showPrompt('玩家1完成4列，玩家2补一轮');
+              await new Promise(r => setTimeout(r, 600));
+              await doTurn(1);
+              if (treasureOwner !== null) addScore(treasureOwner, 1);
+              renderAll();
+              gameOver = true;
+            }
+            break;
+          }
+          currentPlayer = 1 - currentPlayer;
+        }
+        const winner = computeEndScores();
+        let msg = winner === 'draw' ? '平局！' : winner === 0 ? '玩家1获胜！' : '玩家2获胜！';
+        showPrompt(`🏁 游戏结束！${msg} 分数：玩家1 ${players[0].score}，玩家2 ${players[1].score}`);
+        document.getElementById('newGameBtn').style.display = 'inline-block';
+      }
+
+      // ==================== 重置游戏 ====================
+      function resetGame() {
+        gameOver = false;
+        mapKey = null;
+        selectedMap = null;
+        deck = [];
+        currentPlayer = 0;
+        players = [];
+        treasureOwner = null;
+        colFirstCompleted = Array(5).fill(null);
+        promptResolver = null;
+        document.getElementById('gameArea').style.display = 'none';
+        document.getElementById('setupPanel').style.display = 'flex';
+        document.getElementById('newGameBtn').style.display = 'none';
+        document.getElementById('promptArea').innerHTML = '请选择地图以开始';
+        renderMapPreview(null);
+        // 清除任何高亮
+        document.querySelectorAll('.selectable, .placeable').forEach(el => el.classList.remove('selectable', 'placeable'));
+        document.getElementById('startBtn').classList.add('hidden');
+      }
+
+      // ==================== 初始化与事件 ====================
+      function renderMapPreview(mapName) {
+        const preview = document.getElementById('mapPreview');
+        if (!mapName || mapName === 'random') {
+          preview.innerHTML = '🎲 随机';
+          return;
+        }
+        const map = MAPS[mapName];
+        let html = '<div style="display:inline-block; text-align:center;">';
+        html += `<div style="font-weight:bold;">地图 ${mapName}</div>`;
+        html += '<div style="display:grid; grid-template-columns:repeat(5, 18px); gap:2px;">';
+        for (let r = 4; r >= 0; r--) {
+          for (let c = 0; c < 5; c++) {
+            const rows = map.columns[c].rows;
+            if (rows.includes(r)) {
+              html += '<div style="width:18px; height:18px; background:#4a6a8a; border-radius:2px;"></div>';
+            } else {
+              html += '<div style="width:18px; height:18px; background:transparent;"></div>';
+            }
+          }
+        }
+        html += '</div></div>';
+        preview.innerHTML = html;
+      }
+
+      function setupGame(key) {
+        mapKey = key;
+        createDeck();
+        players = [createPlayer(0), createPlayer(1)];
+        treasureOwner = null;
+        colFirstCompleted = Array(5).fill(null);
+        gameOver = false;
+        if (mapKey === 'G') {
+          for (let p of players) p.prisoners = [drawTile(), drawTile()];
+        }
+        document.getElementById('gameArea').style.display = 'flex';
+        document.getElementById('setupPanel').style.display = 'none';
+        document.getElementById('newGameBtn').style.display = 'none';
+        renderAll();
+        runGame();
+      }
+
+      document.querySelectorAll('.setup button[data-map]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const map = btn.dataset.map;
+          if (map === 'random') {
+            selectedMap = 'random';
+            renderMapPreview('random');
+            document.getElementById('startBtn').classList.remove('hidden');
+            showPrompt('已选择随机地图，点击开始游戏');
+          } else {
+            selectedMap = map;
+            renderMapPreview(map);
+            document.getElementById('startBtn').classList.remove('hidden');
+            showPrompt(`已选择地图 ${map}，点击开始游戏`);
+          }
+        });
+      });
+
+      document.getElementById('startBtn').addEventListener('click', () => {
+        if (selectedMap === 'random') {
+          const keys = ['A','B','C','D','E','G'];
+          const chosen = keys[Math.floor(Math.random() * keys.length)];
+          setupGame(chosen);
+        } else if (selectedMap) {
+          setupGame(selectedMap);
+        }
+      });
+
+      // 初始渲染
+      renderMapPreview(null);
+      renderAll();
+    })();
+  </script>
+</body>
+</html>
