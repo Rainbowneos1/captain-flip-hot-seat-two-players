@@ -234,7 +234,6 @@
         const res = [];
         for (let c = 0; c < cols.length; c++) {
           if (isColumnFull(player, c)) continue;
-          // 读取顶层requiresMinScore（已修复）
           if (cols[c].requiresMinScore && player.score < cols[c].requiresMinScore) continue;
           res.push(c);
         }
@@ -470,6 +469,16 @@
 
         promptArea.innerHTML = `玩家${playerIdx+1} 放置 <span style="font-size:2rem;">${getTileEmoji(tile)}</span> ${getTileName(tile)}`;
         renderAll();
+
+        // 检查是否有合法列可放置
+        const placeableCols = getPlaceableColumns(player);
+        if (placeableCols.length === 0) {
+          showPrompt('没有合法空格可放，方块弃掉');
+          await new Promise(r => setTimeout(r, 600));
+          renderAll();
+          return;
+        }
+
         highlightPlaceableColumns(playerIdx);
         const placement = await waitForClick(`#player${playerIdx} .placeable`);
         clearHighlights();
@@ -485,6 +494,7 @@
 
         await resolveRoleEffect(playerIdx, pos.row, pos.col, tile);
 
+        // 修复：只有该列尚未触发过柱奖励时才触发
         if (isColumnFull(player, col) && !player.finishedCols[col]) {
           player.finishedCols[col] = true;
           await resolveColumnReward(playerIdx, col);
@@ -671,6 +681,15 @@
             }
             break;
           }
+          case 'end_if_same': {
+            // 游戏结束才结算，这里无立即效果
+            break;
+          }
+          case 'end_if_all_distinct': {
+            // 游戏结束才结算
+            break;
+          }
+          default: break;
         }
         renderAll();
       }
@@ -685,6 +704,7 @@
         for (let pIdx = 0; pIdx < 2; pIdx++) {
           const player = players[pIdx];
           const map = MAPS[mapKey];
+          // 瞭望员
           for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
             const tile = player.grid[r][c];
             if (tile && getTileUpRole(tile) === 'lookout') {
@@ -693,6 +713,7 @@
               if (!hasAbove) addScore(pIdx, 4);
             }
           }
+          // 木匠
           for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
             const tile = player.grid[r][c];
             if (tile && getTileUpRole(tile) === 'carpenter') {
@@ -708,12 +729,14 @@
               if (!hasGunnerRow && !hasGunnerCol) addScore(pIdx, 3);
             }
           }
+          // 鹦鹉
           let parrotCount = 0;
           for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
             const t = player.grid[r][c];
             if (t && getTileUpRole(t) === 'parrot') parrotCount++;
           }
           addScore(pIdx, -parrotCount);
+          // 水手
           let sailorCols = 0;
           for (let c = 0; c < 5; c++) {
             let hasSailor = false;
@@ -724,15 +747,21 @@
             if (hasSailor) sailorCols++;
           }
           addScore(pIdx, sailorCols * sailorCols);
+          // 地图C特殊奖励（仅在列已完成时结算）
           if (mapKey === 'C') {
             const col2 = map.columns[1];
-            const roles2 = col2.rows.map(r => getTileUpRole(player.grid[r][1]));
-            if (roles2.every(r => r === roles2[0])) addScore(pIdx, col2.reward.score);
+            if (player.finishedCols[1]) {
+              const roles2 = col2.rows.map(r => getTileUpRole(player.grid[r][1]));
+              if (roles2.every(r => r === roles2[0])) addScore(pIdx, col2.reward.score);
+            }
             const col4 = map.columns[3];
-            const roles4 = col4.rows.map(r => getTileUpRole(player.grid[r][3]));
-            const unique4 = new Set(roles4);
-            if (unique4.size === roles4.length) addScore(pIdx, col4.reward.score);
+            if (player.finishedCols[3]) {
+              const roles4 = col4.rows.map(r => getTileUpRole(player.grid[r][3]));
+              const unique4 = new Set(roles4);
+              if (unique4.size === roles4.length) addScore(pIdx, col4.reward.score);
+            }
           }
+          // 炮手计数
           let gunnerCount = 0;
           for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
             const t = player.grid[r][c];
@@ -802,7 +831,6 @@
         document.getElementById('newGameBtn').style.display = 'none';
         document.getElementById('promptArea').innerHTML = '请选择地图以开始';
         renderMapPreview(null);
-        // 清除任何高亮
         document.querySelectorAll('.selectable, .placeable').forEach(el => el.classList.remove('selectable', 'placeable'));
         document.getElementById('startBtn').classList.add('hidden');
       }
